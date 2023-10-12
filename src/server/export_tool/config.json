@@ -1,4 +1,5 @@
 {
 	"TagetPath": ".//Data",
-	"OutPath": ".//Out"
+	"ServerOutPath": ".//ServerOut",
+	"ClientOutPath": ".//ClientOut"
 }

@@ -15,8 +15,9 @@ import (
 )
 
 type Config struct {
-	TagetPath string `json:"TagetPath"`
-	OutPath   string `json:"OutPath"`
+	TagetPath     string `json:"TagetPath"`
+	ServerOutPath string `json:"ServerOutPath"`
+	ClientOutPath string `json:"ClientOutPath"`
 }
 
 type DataInfo struct {
@@ -58,8 +59,9 @@ func main() {
 		return
 	}
 
-	param := os.Args[0]
+	param := os.Args[1]
 	onlytype := 1
+	fmt.Println(param)
 	if param == "server" {
 		onlytype = 2
 	} else if param == "client" {
@@ -84,7 +86,34 @@ func main() {
 	}
 
 	//removeAllContents("Out", false)
-	Convert_Dir(conf.TagetPath, conf.OutPath, onlytype)
+	OutPath := ""
+	if onlytype == 1 {
+		OutPath = conf.ClientOutPath
+	} else {
+		OutPath = conf.ServerOutPath
+	}
+	outdir, err := os.Open(OutPath)
+	if err != nil {
+		fmt.Println("没找到输出路径 Error:", err)
+		outdir.Close()
+		return
+	}
+	outdir.Close()
+
+	targetdir, err := os.Open(conf.TagetPath)
+	if err != nil {
+		fmt.Println("没找到源文件路径 Error:", err)
+		targetdir.Close()
+		return
+	}
+	targetdir.Close()
+
+	err = Convert_Dir(conf.TagetPath, OutPath, onlytype)
+
+	if err != nil {
+		fmt.Println("Error:", err)
+		return
+	}
 
 	endTime := time.Now()
 	elapsedTime := endTime.Sub(startTime)
@@ -151,12 +180,12 @@ func Convert_File(excelFilePath string, excelFileName string, outPath string, on
 
 	xlFile, err := xlsx.OpenFile(excelFilePath)
 	if err != nil {
-		log.Printf("无法打开Excel文件:%s- %s\n", excelFilePath, err)
+		fmt.Printf("无法打开Excel文件:%s- %s\n", excelFilePath, err)
 		return
 	}
 	sheet := xlFile.Sheets[0]
 	if sheet.MaxRow < 2 {
-		log.Printf("数据表格式错误，行数 小于 2: %s\n", excelFileName)
+		fmt.Printf("数据表格式错误，行数 小于 2: %s\n", excelFileName)
 		return
 	}
 
@@ -168,6 +197,11 @@ func Convert_File(excelFilePath string, excelFileName string, outPath string, on
 		tempinfo.names = append(tempinfo.names, nameRow.Cells[i].String())
 	}
 	for i := 0; i < len(typeRow.Cells); i++ {
+		if typeRow.Cells[i].String() != "number" && typeRow.Cells[i].String() != "Number" &&
+			typeRow.Cells[i].String() != "string" && typeRow.Cells[i].String() != "String" &&
+			typeRow.Cells[i].String() != "Array" && typeRow.Cells[i].String() != "Array" {
+
+		}
 		tempinfo.types = append(tempinfo.types, typeRow.Cells[i].String())
 	}
 	for i := 0; i < len(onlytypeRow.Cells); i++ {
@@ -186,7 +220,7 @@ func Convert_File(excelFilePath string, excelFileName string, outPath string, on
 	luaPath := filepath.Join(outPath, luaName)
 	file, err := os.OpenFile(luaPath, os.O_WRONLY|os.O_TRUNC|os.O_CREATE, 0644)
 	if err != nil {
-		log.Fatalf("OpenAndCreateFile Failed: %s  %s\n", luaPath, err)
+		fmt.Printf("OpenAndCreateFile Failed: %s  %s\n", luaPath, err)
 		return
 	}
 	defer file.Close()
@@ -213,7 +247,7 @@ func Convert_File(excelFilePath string, excelFileName string, outPath string, on
 		file.WriteString(dataRow.Cells[0].String())
 		file.WriteString("] ")
 		file.WriteString("= {")
-		for index := 0; index < len(dataRow.Cells); index++ {
+		for index := 0; index < len(tempinfo.names); index++ {
 			if index >= len(tempinfo.names) {
 				continue
 			}
@@ -248,7 +282,9 @@ func Convert_File(excelFilePath string, excelFileName string, outPath string, on
 			} else if *temptype == "array" || *temptype == "Array" {
 				file.WriteString("{")
 			}
-			file.WriteString(dataRow.Cells[index].String())
+			if index < len(dataRow.Cells) {
+				file.WriteString(dataRow.Cells[index].String())
+			}
 			if *temptype == "string" || *temptype == "String" {
 				file.WriteString("\"")
 			} else if *temptype == "array" || *temptype == "Array" {
