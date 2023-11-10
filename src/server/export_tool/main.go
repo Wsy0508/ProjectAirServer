@@ -189,7 +189,7 @@ func Convert_File(excelFilePath string, excelFileName string, outPath string, on
 	if FileType == "#Vertical_Array" {
 		Convert_File_Vertical(excelFilePath, excelFileName, outPath, onlytype, filename, true)
 	} else if FileType == "#Vertical_Single" {
-		Convert_File_Vertical(excelFilePath, excelFileName, outPath, onlytype, filename, true)
+		Convert_File_Vertical(excelFilePath, excelFileName, outPath, onlytype, filename, false)
 	} else {
 		Convert_File_Horizontal(excelFilePath, excelFileName, outPath, onlytype, filename)
 	}
@@ -268,9 +268,6 @@ func Convert_File_Horizontal(excelFilePath string, excelFileName string, outPath
 		file.WriteString("] ")
 		file.WriteString("= {")
 		for index := 0; index < len(tempinfo.names); index++ {
-			if index >= len(tempinfo.names) {
-				continue
-			}
 
 			tempname, nameerr := tempinfo.GetName(index)
 			if *tempname == "" {
@@ -371,6 +368,10 @@ func Convert_File_Vertical(excelFilePath string, excelFileName string, outPath s
 
 	for i := 5; i < len(sheet.Cols); i++ {
 		firstDataRow := sheet.Rows[0]
+		if i >= len(firstDataRow.Cells) {
+			continue
+		}
+
 		if firstDataRow.Cells[i].String() == "" {
 			continue
 		}
@@ -383,11 +384,19 @@ func Convert_File_Vertical(excelFilePath string, excelFileName string, outPath s
 		}
 
 		for index := 0; index < len(tempinfo.names); index++ {
+			if index >= len(sheet.Rows) {
+				break
+			}
 			dataRow := sheet.Rows[index]
 			Write_Lua_File(index, i, onlytype, luaPath, tempinfo, dataRow, file)
+			if !isMoreCol {
+				file.WriteString("\n")
+			}
 		}
 		if isMoreCol {
 			file.WriteString("},\n")
+		} else {
+			file.WriteString("\n")
 		}
 
 	}
@@ -399,11 +408,11 @@ func Write_Lua_File(RowIndex int, CelIndex int, onlytype int, luaPath string, st
 	if !ok {
 		return
 	}
-	dataRow, ok := structs[1].(xlsx.Row)
+	dataRow, ok := structs[1].(*xlsx.Row)
 	if !ok {
 		return
 	}
-	file, ok := structs[1].(os.File)
+	file, ok := structs[2].(*os.File)
 	if !ok {
 		return
 	}
@@ -438,8 +447,8 @@ func Write_Lua_File(RowIndex int, CelIndex int, onlytype int, luaPath string, st
 	} else if *temptype == "array" || *temptype == "Array" {
 		file.WriteString("{")
 	}
-	if RowIndex < len(dataRow.Cells) {
-		file.WriteString(dataRow.Cells[RowIndex].String())
+	if CelIndex < len(dataRow.Cells) {
+		file.WriteString(dataRow.Cells[CelIndex].String())
 	}
 	if *temptype == "string" || *temptype == "String" {
 		file.WriteString("\"")
