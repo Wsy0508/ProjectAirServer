@@ -178,13 +178,33 @@ func Convert_File(excelFilePath string, excelFileName string, outPath string, on
 		return
 	}
 
+	filename := parts[0]
 	xlFile, err := xlsx.OpenFile(excelFilePath)
 	if err != nil {
 		fmt.Printf("无法打开Excel文件:%s- %s\n", excelFilePath, err)
 		return
 	}
 	sheet := xlFile.Sheets[0]
-	if sheet.MaxRow < 2 {
+	FileType := sheet.Rows[0].Cells[0].String()
+	if FileType == "#Vertical_Array" {
+		Convert_File_Vertical(excelFilePath, excelFileName, outPath, onlytype, filename, true)
+	} else if FileType == "#Vertical_Single" {
+		Convert_File_Vertical(excelFilePath, excelFileName, outPath, onlytype, filename, true)
+	} else {
+		Convert_File_Horizontal(excelFilePath, excelFileName, outPath, onlytype, filename)
+	}
+
+}
+
+// 横表
+func Convert_File_Horizontal(excelFilePath string, excelFileName string, outPath string, onlytype int, filename string) {
+	xlFile, err := xlsx.OpenFile(excelFilePath)
+	if err != nil {
+		fmt.Printf("无法打开Excel文件:%s- %s\n", excelFilePath, err)
+		return
+	}
+	sheet := xlFile.Sheets[0]
+	if sheet.MaxRow <= 4 {
 		fmt.Printf("数据表格式错误，行数 小于 2: %s\n", excelFileName)
 		return
 	}
@@ -216,7 +236,7 @@ func Convert_File(excelFilePath string, excelFileName string, outPath string, on
 
 	// 尝试打开文件
 	// 选择要读取的工作表
-	luaName := parts[0] + ".lua"
+	luaName := filename + ".lua"
 	luaPath := filepath.Join(outPath, luaName)
 	file, err := os.OpenFile(luaPath, os.O_WRONLY|os.O_TRUNC|os.O_CREATE, 0644)
 	if err != nil {
@@ -295,6 +315,139 @@ func Convert_File(excelFilePath string, excelFileName string, outPath string, on
 		file.WriteString("},\n")
 	}
 	file.WriteString("}\n")
+}
+
+// 转换文件 竖表
+func Convert_File_Vertical(excelFilePath string, excelFileName string, outPath string, onlytype int, filename string, isMoreCol bool) {
+	xlFile, err := xlsx.OpenFile(excelFilePath)
+	if err != nil {
+		fmt.Printf("无法打开Excel文件:%s- %s\n", excelFilePath, err)
+		return
+	}
+	sheet := xlFile.Sheets[0]
+	if sheet.MaxCol < 5 {
+		fmt.Printf("Convert_File_Vertical_Single数据表格式错误，列数 小于 2: %s\n", excelFileName)
+		return
+	}
+
+	tempinfo := DataInfo{}
+	for i := 0; i < len(sheet.Rows); i++ {
+		tempRow := sheet.Rows[i]
+		if tempRow == nil {
+			continue
+		}
+
+		tempinfo.names = append(tempinfo.names, tempRow.Cells[1].String())
+		tempinfo.types = append(tempinfo.types, tempRow.Cells[2].String())
+		intValue, err := strconv.Atoi(tempRow.Cells[3].String())
+		if err != nil {
+			tempinfo.onlytypes = append(tempinfo.onlytypes, 0)
+		} else {
+			tempinfo.onlytypes = append(tempinfo.onlytypes, intValue)
+		}
+	}
+	// 尝试打开文件
+	// 选择要读取的工作表
+	luaName := filename + ".lua"
+	luaPath := filepath.Join(outPath, luaName)
+	file, err := os.OpenFile(luaPath, os.O_WRONLY|os.O_TRUNC|os.O_CREATE, 0644)
+	if err != nil {
+		fmt.Printf("OpenAndCreateFile Failed: %s  %s\n", luaPath, err)
+		return
+	}
+	defer file.Close()
+
+	file.WriteString("return\n")
+	file.WriteString("{\n")
+
+	maxcols := len(sheet.Cols)
+	if maxcols < 6 {
+		file.WriteString("}\n")
+		return
+	}
+	if !isMoreCol {
+		maxcols = 6
+	}
+
+	for i := 5; i < len(sheet.Cols); i++ {
+		firstDataRow := sheet.Rows[0]
+		if firstDataRow.Cells[i].String() == "" {
+			continue
+		}
+		//多列数据
+		if isMoreCol {
+			file.WriteString("[")
+			file.WriteString(firstDataRow.Cells[i].String())
+			file.WriteString("] ")
+			file.WriteString("= {")
+		}
+
+		for index := 0; index < len(tempinfo.names); index++ {
+			dataRow := sheet.Rows[index]
+			Write_Lua_File(index, i, onlytype, luaPath, tempinfo, dataRow, file)
+		}
+		if isMoreCol {
+			file.WriteString("},\n")
+		}
+
+	}
+	file.WriteString("}\n")
+}
+
+func Write_Lua_File(RowIndex int, CelIndex int, onlytype int, luaPath string, structs ...interface{}) {
+	tempinfo, ok := structs[0].(DataInfo)
+	if !ok {
+		return
+	}
+	dataRow, ok := structs[1].(xlsx.Row)
+	if !ok {
+		return
+	}
+	file, ok := structs[1].(os.File)
+	if !ok {
+		return
+	}
+
+	tempname, nameerr := tempinfo.GetName(RowIndex)
+	if *tempname == "" {
+		return
+	}
+
+	ColOnlyType := tempinfo.GetOnlyType(RowIndex)
+	if ColOnlyType == 3 { //策划备注
+		return
+	}
+	if ColOnlyType > 0 && ColOnlyType != onlytype {
+		return
+	}
+
+	temptype, typeerr := tempinfo.GetType(RowIndex)
+	if nameerr != nil {
+		log.Fatalf("GetName Failed: %s  %s 行 %d  列%d\n", luaPath, nameerr, RowIndex, CelIndex)
+		return
+	}
+
+	if typeerr != nil {
+		log.Fatalf("GetType Failed: %s  %s--行 %d 列%d\n", luaPath, typeerr, RowIndex, CelIndex)
+		return
+	}
+	file.WriteString(*tempname)
+	file.WriteString("=")
+	if *temptype == "string" || *temptype == "String" {
+		file.WriteString("\"")
+	} else if *temptype == "array" || *temptype == "Array" {
+		file.WriteString("{")
+	}
+	if RowIndex < len(dataRow.Cells) {
+		file.WriteString(dataRow.Cells[RowIndex].String())
+	}
+	if *temptype == "string" || *temptype == "String" {
+		file.WriteString("\"")
+	} else if *temptype == "array" || *temptype == "Array" {
+		file.WriteString("}")
+	}
+	file.WriteString(",")
+
 }
 
 // 递归删除目录及其所有内容
