@@ -263,8 +263,20 @@ func Convert_File_Horizontal(excelFilePath string, excelFileName string, outPath
 			continue
 		}
 
+		KeyType, keytypeerr := tempinfo.GetType(0)
+		if keytypeerr != nil {
+			log.Fatalf("GetType Failed: %s  %s--行 %d 列%d\n", luaPath, keytypeerr, i, 0)
+			return
+		}
+
 		file.WriteString("[")
+		if *KeyType == "string" || *KeyType == "String" {
+			file.WriteString("\"")
+		}
 		file.WriteString(dataRow.Cells[0].String())
+		if *KeyType == "string" || *KeyType == "String" {
+			file.WriteString("\"")
+		}
 		file.WriteString("] ")
 		file.WriteString("= {")
 		for index := 0; index < len(tempinfo.names); index++ {
